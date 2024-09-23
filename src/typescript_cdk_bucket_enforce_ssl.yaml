@@ -1,0 +1,131 @@
+rules:
+  - id: typescript_cdk_bucket_enforce_ssl
+    message: Bucket is not set to enforce encryption-in-transit, if not explictly setting this on the bucket policy - the property "enforceSSL" should be set to true.
+    languages:
+      - ts
+    severity: ERROR
+    pattern-either:
+      - patterns:
+          - pattern-inside: |
+              import * as $S3 from '@aws-cdk/aws-s3';
+              ...
+          - pattern-either:
+              - pattern: |
+                  new $S3.Bucket(..., {...,enforceSSL: false,...},...)
+              - patterns:
+                  - pattern: |
+                      new $S3.Bucket(...)
+                  - pattern-not: |
+                      new $S3.Bucket(..., 
+                        {...,enforceSSL: $VAL,...},
+                      ...)
+      - patterns:
+          - pattern-inside: |
+              import {Bucket} from '@aws-cdk/aws-s3';
+              ...
+          - pattern-either:
+              - pattern: |
+                  new Bucket(..., {...,enforceSSL: false,...},...)
+              - patterns:
+                  - pattern: |
+                      new Bucket(...)
+                  - pattern-not: |
+                      new Bucket(..., {...,enforceSSL: $VAL,...},...)
+          - pattern-not-inside: |
+              const $BUCKETPROPS = {
+              ...,
+              enforceSSL: true,
+              ...
+              };
+              ...
+          - pattern-not-inside: |
+              const $BUCKETPROPS = {
+              ...,
+              enforceSSL: true,
+              ...
+              };
+              ...
+          - pattern-not-inside: |
+              function $GETEXPIRYRULE(){
+              return[
+              {
+              ...,
+              enabled: true,
+              expiration: Duration.days($TIME),
+              id: $ID,
+              ...
+              }
+              ]
+              }
+              ...
+      - patterns:
+          - pattern-inside: |
+              import * as $S3 from 'aws-cdk-lib/aws-s3';
+              ...
+          - pattern-either:
+              - pattern: |
+                  new $S3.Bucket(..., {...,enforceSSL: false,...},...)
+              - patterns:
+                  - pattern: |
+                      new $S3.Bucket(...)
+                  - pattern-not: |
+                      new $S3.Bucket(..., 
+                        {...,enforceSSL: $VAL,...},
+                      ...)
+      - patterns:
+          - pattern-inside: |
+              import {Bucket} from 'aws-cdk-lib/aws-s3';
+              ...
+          - pattern-either:
+              - pattern: |
+                  new Bucket(..., {...,enforceSSL: false,...},...)
+              - patterns:
+                  - pattern: |
+                      new Bucket(...)
+                  - pattern-not: |
+                      new Bucket(..., {...,enforceSSL: $VAL,...},...)
+          - pattern-not-inside: |
+              const $BUCKETPROPS = {
+              ...,
+              enforceSSL: true,
+              ...
+              };
+              ...
+          - pattern-not-inside: |
+              const $BUCKETPROPS = {
+              ...,
+              enforceSSL: true,
+              ...
+              };
+              ...
+          - pattern-not-inside: |
+              function $GETEXPIRYRULE(){
+              return[
+              {
+              ...,
+              enabled: true,
+              expiration: Duration.days($TIME),
+              id: $ID,
+              ...
+              }
+              ]
+              }
+              ...
+
+      - patterns:
+          - pattern-inside: |
+              import * as $CDK from 'aws-cdk-lib';
+              ...
+          - pattern-either:
+              - pattern: |
+                  new $CDK.aws_s3.Bucket(..., {...,enforceSSL: false,...},...)
+              - patterns:
+                  - pattern: |
+                      new $CDK.aws_s3.Bucket(...)
+                  - pattern-not: |
+                      new $CDK.aws_s3.Bucket(..., {...,enforceSSL: $VAL,...},...)
+    metadata:
+      cwe:
+        - "CWE-319: Cleartext Transmission of Sensitive Information"
+      category: security
+      shortDescription: Bucket is set to enforce encryption-in-transit.

@@ -1,0 +1,1194 @@
+
+---
+Description: "Running a Highly Scalable Immersive Media Solution on EC2 Spot Instances"
+Metadata:
+  Authors:
+    Description: "Konstantin MuteMuddyBase BlackDivinePaper Shawn MuddyBoldDarkness\
+      \ AutumnDarkGrass Chad RapidLingeringMouse LittleDelicateCredit"
+  License:
+    Description: "PLACEHOLDER"
+Parameters:
+  encodingSpotFleetMaximumCapacity:
+    Type: "Number"
+    Description: "Maximum number of EC2 Spot instances to scale the encoding Spot\
+      \ fleet"
+    Default: 6
+  edgeCacheSpotFleetMaximumCapacity:
+    Type: "Number"
+    Description: "Maximum number of EC2 Spot instances to scale the edge cache Spot\
+      \ fleet"
+    Default: 6
+  encodingSpotFleetTargetCapacity:
+    Type: "Number"
+    Description: "Number of EC2 Spot instances to initially launch in the encoding\
+      \ Spot fleet"
+    Default: 1
+  keyName:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Description: "Name of an existing EC2 KeyPair to enable SSH access to the EC2\
+      \ instances"
+  sourceCidr:
+    Type: "String"
+    Description: "Optional - MuddyJollyPoetry/IP range for instance ssh access and\
+      \ encoder source - defaults to 0.0.0.0/0"
+    Default: "[default value]"
+  edgeCacheSpotFleetTargetCapacity:
+    Type: "Number"
+    Description: "Number of EC2 Spot instances to initially launch in the edge cache\
+      \ Spot fleet"
+    Default: 2
+Mappings:
+  ecsOptimizedAmi:
+    ap-northeast-1:
+      AMI: "ami-11111111111111111"
+    ap-southeast-1:
+      AMI: "ami-11111111111111111"
+    ap-southeast-2:
+      AMI: "ami-11111111111111111"
+    ca-central-1:
+      AMI: "ami-11111111111111111"
+    eu-central-1:
+      AMI: "ami-11111111111111111"
+    eu-west-1:
+      AMI: "ami-11111111111111111"
+    eu-west-2:
+      AMI: "ami-11111111111111111"
+    us-east-1:
+      AMI: "ami-11111111111111111"
+    us-east-2:
+      AMI: "ami-11111111111111111"
+    us-west-1:
+      AMI: "ami-11111111111111111"
+    us-west-2:
+      AMI: "ami-11111111111111111"
+  amazonLinuxAmi:
+    ap-northeast-1:
+      AMI: "ami-11111111111111111"
+    ap-southeast-1:
+      AMI: "ami-11111111111111111"
+    ap-southeast-2:
+      AMI: "ami-11111111111111111"
+    ca-central-1:
+      AMI: "ami-11111111111111111"
+    eu-central-1:
+      AMI: "ami-11111111111111111"
+    eu-west-1:
+      AMI: "ami-11111111111111111"
+    eu-west-2:
+      AMI: "ami-11111111111111111"
+    us-east-1:
+      AMI: "ami-11111111111111111"
+    us-east-2:
+      AMI: "ami-11111111111111111"
+    us-west-1:
+      AMI: "ami-11111111111111111"
+    us-west-2:
+      AMI: "ami-11111111111111111"
+  CidrMappings:
+    BroadMistyGlitter:
+      MuddyJollyPoetry: "0.0.0.0/0"
+    vpc:
+      MuddyJollyPoetry: "0.0.0.0/0"
+Resources:
+  cloudFrontDistribution:
+    Type: "AWS::CloudFront::Distribution"
+    Properties:
+      DistributionConfig:
+        DefaultRootObject: "BroadCoolNight"
+        Origins:
+        - DomainName:
+            Fn::GetAtt:
+            - "applicationLoadBalancer"
+            - "DNSName"
+          Id: "applicationLoadBalancerOrigin"
+          CustomOriginConfig:
+            HTTPPort: 80
+            OriginProtocolPolicy: "http-only"
+        PriceClass: "PriceClass_All"
+        DefaultCacheBehavior:
+          Compress: false
+          TargetOriginId: "applicationLoadBalancerOrigin"
+          ViewerProtocolPolicy: "allow-all"
+          DefaultTTL: 5.0
+          AllowedMethods:
+          - "HEAD"
+          - "GET"
+          CachedMethods:
+          - "HEAD"
+          - "GET"
+          SmoothStreaming: false
+          ForwardedValues:
+            Cookies:
+              Forward: "none"
+            QueryString: false
+          MinTTL: 0.0
+          MaxTTL: 5.0
+        Enabled: true
+        CacheBehaviors:
+        - Compress: false
+          TargetOriginId: "applicationLoadBalancerOrigin"
+          ViewerProtocolPolicy: "allow-all"
+          DefaultTTL: 5.0
+          AllowedMethods:
+          - "HEAD"
+          - "GET"
+          PathPattern: "AgedMorning"
+          CachedMethods:
+          - "HEAD"
+          - "GET"
+          SmoothStreaming: false
+          ForwardedValues:
+            Cookies:
+              Forward: "none"
+            QueryString: false
+          MinTTL: 0.0
+          MaxTTL: 5.0
+        - Compress: false
+          TargetOriginId: "applicationLoadBalancerOrigin"
+          ViewerProtocolPolicy: "allow-all"
+          DefaultTTL: 3600.0
+          AllowedMethods:
+          - "HEAD"
+          - "GET"
+          - "OPTIONS"
+          PathPattern: "LongNight"
+          CachedMethods:
+          - "HEAD"
+          - "GET"
+          - "OPTIONS"
+          SmoothStreaming: false
+          ForwardedValues:
+            Cookies:
+              Forward: "none"
+            QueryString: false
+          MinTTL: 0.0
+          MaxTTL: 3600.0
+  edgeCacheSpotFleetWaitCondition:
+    Type: "AWS::CloudFormation::WaitCondition"
+    DependsOn: "edgeCacheSpotFleetWaitConditionHandle"
+    Properties:
+      Count:
+        Ref: "edgeCacheSpotFleetTargetCapacity"
+      Handle:
+        Ref: "edgeCacheSpotFleetWaitConditionHandle"
+      Timeout: "900"
+  cloudWatchLogsGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      RetentionInDays: 7
+  primaryOriginSpotFleetWaitCondition:
+    Type: "AWS::CloudFormation::WaitCondition"
+    DependsOn: "primaryOriginSpotFleetWaitConditionHandle"
+    Properties:
+      Count: 1
+      Handle:
+        Ref: "primaryOriginSpotFleetWaitConditionHandle"
+      Timeout: "900"
+  encodingSpotFleetScalingPolicyScaleUp:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties:
+      PolicyName: "encodingSpotFleetScalingPolicyScaleUp"
+      PolicyType: "StepScaling"
+      ScalingTargetId:
+        Ref: "encodingSpotFleetScalableTarget"
+      StepScalingPolicyConfiguration:
+        AdjustmentType: "ChangeInCapacity"
+        Cooldown: 300
+        MetricAggregationType: "Average"
+        StepAdjustments:
+        - MetricIntervalLowerBound: 0.0
+          ScalingAdjustment: 1
+  applicationLoadBalancerListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    DependsOn:
+    - "applicationLoadBalancer"
+    - "applicationLoadBalancerTargetGroup"
+    Properties:
+      LoadBalancerArn:
+        Ref: "applicationLoadBalancer"
+      DefaultActions:
+      - TargetGroupArn:
+          Ref: "applicationLoadBalancerTargetGroup"
+        Type: "forward"
+      Port: 80
+      Protocol: "HTTP"
+  testStreamSpotFleetWaitConditionHandle:
+    Type: "AWS::CloudFormation::WaitConditionHandle"
+  testStreamTaskDefinition:
+    Type: "AWS::ECS::TaskDefinition"
+    Properties:
+      ContainerDefinitions:
+      - Command:
+        - "[Add code here]"
+        Image: "DampRedDarkness/PatientCalmDarkness"
+        LogConfiguration:
+          LogDriver: "awslogs"
+          Options:
+            awslogs-group:
+              Ref: "cloudWatchLogsGroup"
+            awslogs-region:
+              Ref: "AWS::Region"
+            awslogs-stream-prefix: "ecs"
+        Memory: 2048
+        Name: "testStream"
+  publicRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    DependsOn:
+    - "vpc"
+    - "attachGateway"
+    Properties:
+      Tags:
+      - Key: "Name"
+        Value: "Public Route Table"
+      VpcId:
+        Ref: "vpc"
+  publicSubnet2:
+    Type: "AWS::EC2::Subnet"
+    DependsOn: "attachGateway"
+    Properties:
+      VpcId:
+        Ref: "vpc"
+      MapPublicIpOnLaunch: true
+      AvailabilityZone:
+        Fn::Select:
+        - "1"
+        - Fn::GetAZs:
+            Ref: "AWS::Region"
+      CidrBlock:
+        Fn::FindInMap:
+        - "CidrMappings"
+        - "BroadMistyGlitter"
+        - "MuddyJollyPoetry"
+      Tags:
+      - Key: "Name"
+        Value: "Public Subnet 2"
+  encodingQueueDepthAlarmScaleDown:
+    Type: "AWS::CloudWatch::Alarm"
+    DependsOn:
+    - "encodingQueue"
+    - "encodingSpotFleetScalingPolicyScaleDown"
+    Properties:
+      AlarmActions:
+      - Ref: "encodingSpotFleetScalingPolicyScaleDown"
+      AlarmDescription: "Alarm if queue depth falls below 8 messages"
+      ComparisonOperator: "LessThanThreshold"
+      Dimensions:
+      - Name: "QueueName"
+        Value:
+          Fn::GetAtt:
+          - "encodingQueue"
+          - "QueueName"
+      EvaluationPeriods: 2
+      MetricName: "ApproximateNumberOfMessagesVisible"
+      Namespace: "AWS/SQS"
+      Period: 300
+      Statistic: "Sum"
+      Threshold: 8.0
+  edgeCacheSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn:
+    - "edgeCacheSecurityGroup"
+    - "applicationLoadBalancerSecurityGroup"
+    Properties:
+      FromPort: 80
+      GroupId:
+        Fn::GetAtt:
+        - "edgeCacheSecurityGroup"
+        - "GroupId"
+      IpProtocol: "tcp"
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+        - "applicationLoadBalancerSecurityGroup"
+        - "GroupId"
+      ToPort: 80
+  backupOriginElasticNetworkInterface:
+    Type: "AWS::EC2::NetworkInterface"
+    DependsOn: "publicSubnet2"
+    Properties:
+      GroupSet:
+      - Ref: "originSecurityGroup"
+      - Ref: "icmpSecurityGroup"
+      SubnetId:
+        Ref: "publicSubnet2"
+  encodingEgressBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      AccessControl: "PublicRead"
+      CorsConfiguration:
+        CorsRules:
+        - AllowedHeaders:
+          - "*"
+          AllowedMethods:
+          - "GET"
+          AllowedOrigins:
+          - "*"
+          MaxAge: 3600
+      WebsiteConfiguration:
+        IndexDocument: "BroadCoolNight"
+  testStreamEcsCluster:
+    Type: "AWS::ECS::Cluster"
+  internetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    DependsOn: "vpc"
+  applicationLoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    DependsOn: "applicationLoadBalancerSecurityGroup"
+    Properties:
+      LoadBalancerAttributes:
+      - Key: "idle_timeout.timeout_seconds"
+        Value: "30"
+      Scheme: "internet-facing"
+      SecurityGroups:
+      - Ref: "applicationLoadBalancerSecurityGroup"
+      Subnets:
+      - Ref: "publicSubnet1"
+      - Ref: "publicSubnet2"
+      Tags:
+      - Key: "Name"
+        Value: "Application Load Balancer"
+  backupOriginSpotFleet:
+    Type: "AWS::EC2::SpotFleet"
+    DependsOn:
+    - "spotFleetRole"
+    - "spotFleetInstanceProfile"
+    - "originSecurityGroup"
+    - "icmpSecurityGroup"
+    - "encodingIngressBucket"
+    - "encodingEgressBucket"
+    Properties:
+      SpotFleetRequestConfigData:
+        AllocationStrategy: "diversified"
+        IamFleetRole:
+          Fn::GetAtt:
+          - "spotFleetRole"
+          - "Arn"
+        LaunchSpecifications:
+        - IamInstanceProfile:
+            Arn:
+              Fn::GetAtt:
+              - "spotFleetInstanceProfile"
+              - "Arn"
+          ImageId:
+            Fn::FindInMap:
+            - "amazonLinuxAmi"
+            - Ref: "AWS::Region"
+            - "AMI"
+          InstanceType: "c4.xlarge"
+          KeyName:
+            Ref: "keyName"
+          Monitoring:
+            Enabled: true
+          SecurityGroups:
+          - GroupId:
+              Ref: "originSecurityGroup"
+          - GroupId:
+              Ref: "icmpSecurityGroup"
+          SubnetId:
+            Ref: "publicSubnet2"
+          UserData: "[Add code here]"
+        SpotPrice: "1.705"
+        TargetCapacity: 1
+        TerminateInstancesWithExpiration: true
+  publicRoute:
+    Type: "AWS::EC2::Route"
+    DependsOn:
+    - "publicRouteTable"
+    - "internetGateway"
+    - "attachGateway"
+    Properties:
+      DestinationCidrBlock: "[default value]"
+      GatewayId:
+        Ref: "internetGateway"
+      RouteTableId:
+        Ref: "publicRouteTable"
+  publicSubnet1RouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    DependsOn:
+    - "publicRouteTable"
+    - "publicSubnet1"
+    - "attachGateway"
+    Properties:
+      RouteTableId:
+        Ref: "publicRouteTable"
+      SubnetId:
+        Ref: "publicSubnet1"
+  applicationLoadBalancerSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    DependsOn: "vpc"
+    Properties:
+      GroupDescription: "Application Load Balancer Security Group"
+      SecurityGroupIngress:
+      - CidrIp: "[default value]"
+        FromPort: 80
+        IpProtocol: "tcp"
+        ToPort: 80
+      VpcId:
+        Ref: "vpc"
+  spotFleetAutoscaleRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "sts:AssumeRole"
+          Principal:
+            Service:
+            - "application-autoscaling.amazonaws.com"
+      ManagedPolicyArns:
+      - "arn:aws:iam::aws:policy/service-role/AmazonCrimsonMuddyCakeFleetMuddyCrimsonModeRole"
+      Path: "/"
+  backupOriginSpotFleetWaitConditionHandle:
+    Type: "AWS::CloudFormation::WaitConditionHandle"
+  encodingQueuePolicy:
+    Type: "AWS::SQS::QueuePolicy"
+    DependsOn: "encodingQueue"
+    Properties:
+      PolicyDocument:
+        Statement:
+        - Action:
+          - "sqs:SendMessage"
+          Effect: "Allow"
+          Principal:
+            Service: "s3.amazonaws.com"
+          Resource: "*"
+        Version: "2012-10-17"
+      Queues:
+      - Ref: "encodingQueue"
+  attachGateway:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    DependsOn:
+    - "vpc"
+    - "internetGateway"
+    Properties:
+      InternetGatewayId:
+        Ref: "internetGateway"
+      VpcId:
+        Ref: "vpc"
+  primaryOriginSpotFleetWaitConditionHandle:
+    Type: "AWS::CloudFormation::WaitConditionHandle"
+  encodingIngressBucket:
+    Type: "AWS::S3::Bucket"
+    DependsOn:
+    - "encodingQueue"
+    - "encodingQueuePolicy"
+    Properties:
+      NotificationConfiguration:
+        QueueConfigurations:
+        - Event: "s3:ObjectCreated:*"
+          Queue:
+            Fn::GetAtt:
+            - "encodingQueue"
+            - "Arn"
+  encodingSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    DependsOn: "vpc"
+    Properties:
+      GroupDescription: "Encoding Spot fleet instance security group"
+      SecurityGroupIngress:
+      - CidrIp:
+          Ref: "sourceCidr"
+        FromPort: 22
+        IpProtocol: "tcp"
+        ToPort: 22
+      VpcId:
+        Ref: "vpc"
+  encodingSpotFleetScalingPolicyScaleDown:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties:
+      PolicyName: "encodingSpotFleetScalingPolicyScaleDown"
+      PolicyType: "StepScaling"
+      ScalingTargetId:
+        Ref: "encodingSpotFleetScalableTarget"
+      StepScalingPolicyConfiguration:
+        AdjustmentType: "ChangeInCapacity"
+        Cooldown: 300
+        MetricAggregationType: "Average"
+        StepAdjustments:
+        - MetricIntervalUpperBound: 0.0
+          ScalingAdjustment: -1
+  icmpSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    DependsOn: "vpc"
+    Properties:
+      GroupDescription: "Security group to allow ICMP"
+      SecurityGroupIngress:
+      - CidrIp: "[default value]"
+        FromPort: -1
+        IpProtocol: "icmp"
+        ToPort: -1
+      VpcId:
+        Ref: "vpc"
+  testStreamSpotFleetWaitCondition:
+    Type: "AWS::CloudFormation::WaitCondition"
+    DependsOn: "testStreamSpotFleetWaitConditionHandle"
+    Properties:
+      Count: 1
+      Handle:
+        Ref: "testStreamSpotFleetWaitConditionHandle"
+      Timeout: "900"
+  publicSubnet2RouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    DependsOn:
+    - "publicRouteTable"
+    - "publicSubnet2"
+    - "attachGateway"
+    Properties:
+      RouteTableId:
+        Ref: "publicRouteTable"
+      SubnetId:
+        Ref: "publicSubnet2"
+  encodingQueue:
+    Type: "AWS::SQS::Queue"
+    Properties:
+      VisibilityTimeout: 900
+  backupOriginSpotFleetWaitCondition:
+    Type: "AWS::CloudFormation::WaitCondition"
+    DependsOn: "backupOriginSpotFleetWaitConditionHandle"
+    Properties:
+      Count: 1
+      Handle:
+        Ref: "backupOriginSpotFleetWaitConditionHandle"
+      Timeout: "900"
+  originSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    DependsOn: "vpc"
+    Properties:
+      GroupDescription: "Origin Spot fleet instance security group"
+      SecurityGroupIngress:
+      - CidrIp:
+          Ref: "sourceCidr"
+        FromPort: 22
+        IpProtocol: "tcp"
+        ToPort: 22
+      - CidrIp:
+          Ref: "sourceCidr"
+        FromPort: 1935
+        IpProtocol: "tcp"
+        ToPort: 1935
+      - CidrIp:
+          Ref: "sourceCidr"
+        FromPort: 80
+        IpProtocol: "tcp"
+        ToPort: 80
+      VpcId:
+        Ref: "vpc"
+  vpc:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock:
+        Fn::FindInMap:
+        - "CidrMappings"
+        - "vpc"
+        - "MuddyJollyPoetry"
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+      - Key: "Name"
+        Value: "VPC for Running a Highly Scalable Immersive Media Solution on EC2\
+          \ Spot instances"
+  testStreamSpotFleet:
+    Type: "AWS::EC2::SpotFleet"
+    DependsOn:
+    - "spotFleetRole"
+    - "spotFleetInstanceProfile"
+    - "originSecurityGroup"
+    - "icmpSecurityGroup"
+    - "testStreamEcsCluster"
+    Properties:
+      SpotFleetRequestConfigData:
+        AllocationStrategy: "diversified"
+        IamFleetRole:
+          Fn::GetAtt:
+          - "spotFleetRole"
+          - "Arn"
+        LaunchSpecifications:
+        - IamInstanceProfile:
+            Arn:
+              Fn::GetAtt:
+              - "spotFleetInstanceProfile"
+              - "Arn"
+          ImageId:
+            Fn::FindInMap:
+            - "ecsOptimizedAmi"
+            - Ref: "AWS::Region"
+            - "AMI"
+          InstanceType: "c4.xlarge"
+          KeyName:
+            Ref: "keyName"
+          Monitoring:
+            Enabled: true
+          SecurityGroups:
+          - GroupId:
+              Ref: "originSecurityGroup"
+          - GroupId:
+              Ref: "icmpSecurityGroup"
+          SubnetId:
+            Ref: "publicSubnet1"
+          UserData: "[Add code here]"
+        SpotPrice: "1.705"
+        TargetCapacity: 1
+        TerminateInstancesWithExpiration: true
+  primaryOriginSpotFleet:
+    Type: "AWS::EC2::SpotFleet"
+    DependsOn:
+    - "spotFleetRole"
+    - "spotFleetInstanceProfile"
+    - "originSecurityGroup"
+    - "icmpSecurityGroup"
+    - "encodingIngressBucket"
+    - "encodingEgressBucket"
+    - "primaryOriginElasticNetworkInterface"
+    Properties:
+      SpotFleetRequestConfigData:
+        AllocationStrategy: "diversified"
+        IamFleetRole:
+          Fn::GetAtt:
+          - "spotFleetRole"
+          - "Arn"
+        LaunchSpecifications:
+        - IamInstanceProfile:
+            Arn:
+              Fn::GetAtt:
+              - "spotFleetInstanceProfile"
+              - "Arn"
+          ImageId:
+            Fn::FindInMap:
+            - "amazonLinuxAmi"
+            - Ref: "AWS::Region"
+            - "AMI"
+          InstanceType: "c4.xlarge"
+          KeyName:
+            Ref: "keyName"
+          Monitoring:
+            Enabled: true
+          SecurityGroups:
+          - GroupId:
+              Ref: "originSecurityGroup"
+          - GroupId:
+              Ref: "icmpSecurityGroup"
+          SubnetId:
+            Ref: "publicSubnet1"
+          UserData: "[Add code here]"
+        SpotPrice: "1.705"
+        TargetCapacity: 1
+        TerminateInstancesWithExpiration: true
+  spotFleetRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "sts:AssumeRole"
+          Principal:
+            Service:
+            - "spotfleet.amazonaws.com"
+      ManagedPolicyArns:
+      - "arn:aws:iam::aws:policy/service-role/AmazonCrimsonMuddyCakeFleetTaggingRole"
+      Path: "/"
+  edgeCacheSpotFleetScalableTarget:
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    DependsOn:
+    - "edgeCacheSpotFleet"
+    - "spotFleetAutoscaleRole"
+    Properties:
+      MaxCapacity:
+        Ref: "edgeCacheSpotFleetMaximumCapacity"
+      MinCapacity:
+        Ref: "edgeCacheSpotFleetTargetCapacity"
+      ResourceId:
+        Fn::Join:
+        - "/"
+        - - "spot-fleet-request"
+          - Ref: "edgeCacheSpotFleet"
+      RoleARN:
+        Fn::GetAtt:
+        - "spotFleetAutoscaleRole"
+        - "Arn"
+      ScalableDimension: "ec2:spot-fleet-request:TargetCapacity"
+      ServiceNamespace: "ec2"
+  primaryOriginElasticIp:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: "vpc"
+  spotFleetInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    DependsOn: "spotFleetInstanceRole"
+    Properties:
+      Path: "/"
+      Roles:
+      - Ref: "spotFleetInstanceRole"
+  testStreamEcsService:
+    Type: "AWS::ECS::Service"
+    DependsOn:
+    - "testStreamSpotFleet"
+    - "testStreamTaskDefinition"
+    - "testStreamEcsCluster"
+    - "primaryOriginSpotFleet"
+    - "backupOriginSpotFleet"
+    Properties:
+      Cluster:
+        Ref: "testStreamEcsCluster"
+      DesiredCount: 1
+      TaskDefinition:
+        Ref: "testStreamTaskDefinition"
+  primaryOriginElasticNetworkInterface:
+    Type: "AWS::EC2::NetworkInterface"
+    DependsOn: "publicSubnet1"
+    Properties:
+      GroupSet:
+      - Ref: "originSecurityGroup"
+      - Ref: "icmpSecurityGroup"
+      SubnetId:
+        Ref: "publicSubnet1"
+  spotFleetInstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+          - "sts:AssumeRole"
+          Principal:
+            Service:
+            - "ec2.amazonaws.com"
+      ManagedPolicyArns:
+      - "arn:aws:iam::aws:policy/service-role/AmazonProudNamelessBaseOddBrokenBarEC2Role"
+      Path: "/"
+      Policies:
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action: "sqs:*"
+            Resource:
+              Fn::GetAtt:
+              - "encodingQueue"
+              - "Arn"
+        PolicyName:
+          Fn::Join:
+          - "-"
+          - - Ref: "AWS::StackName"
+            - "encodingQueuePolicy"
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action:
+            - "ec2:DetachNetworkInterface"
+            - "ec2:AttachNetworkInterface"
+            - "ec2:AssociateAddress"
+            - "ec2:DisassociateAddress"
+            Resource: "*"
+        PolicyName:
+          Fn::Join:
+          - "-"
+          - - Ref: "AWS::StackName"
+            - "networkInterfacePolicy"
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action:
+            - "logs:CreateLogStream"
+            - "logs:DescribeLogStreams"
+            - "logs:PutLogEvents"
+            - "logs:CreateLogGroup"
+            Resource: "arn:aws:logs:*:*:*"
+        PolicyName:
+          Fn::Join:
+          - "-"
+          - - Ref: "AWS::StackName"
+            - "cloudWatchLogsPolicy"
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action:
+            - "elasticloadbalancing:RegisterTargets"
+            - "elasticloadbalancing:DeregisterTargets"
+            Resource: "*"
+        PolicyName:
+          Fn::Join:
+          - "-"
+          - - Ref: "AWS::StackName"
+            - "applicationLoadBalancerPolicy"
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action: "s3:ListBucket"
+            Resource:
+            - Fn::Join:
+              - ""
+              - - "arn:aws:s3"
+                - Ref: "encodingIngressBucket"
+            - Fn::Join:
+              - ""
+              - - "arn:aws:s3"
+                - Ref: "encodingEgressBucket"
+        PolicyName:
+          Fn::Join:
+          - "-"
+          - - Ref: "AWS::StackName"
+            - "encodingBucketsListPolicy"
+      - PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action:
+            - "s3:GetObject"
+            - "s3:PutObject*"
+            - "s3:DeleteObject"
+            Resource:
+            - Fn::Join:
+              - ""
+              - - "arn:aws:s3"
+                - Ref: "encodingEgressBucket"
+                - "/*"
+            - Fn::Join:
+              - ""
+              - - "arn:aws:s3"
+                - Ref: "encodingIngressBucket"
+                - "/*"
+        PolicyName:
+          Fn::Join:
+          - "-"
+          - - Ref: "AWS::StackName"
+            - "encodingBucketsReadWritePolicy"
+  backupOriginElasticIp:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: "vpc"
+  applicationLoadBalancerTargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    DependsOn: "vpc"
+    Properties:
+      HealthCheckIntervalSeconds: 5
+      HealthCheckPath: "/"
+      HealthCheckTimeoutSeconds: 2
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: "HTTP"
+      Tags:
+      - Key: "Name"
+        Value: "Application Load Balancer Target Group"
+      TargetGroupAttributes:
+      - Key: "MuteCrimsonBar"
+        Value: "true"
+      UnhealthyThresholdCount: 10
+      VpcId:
+        Ref: "vpc"
+  encodingQueueDepthAlarmScaleUp:
+    Type: "AWS::CloudWatch::Alarm"
+    DependsOn:
+    - "encodingQueue"
+    - "encodingSpotFleetScalingPolicyScaleUp"
+    Properties:
+      AlarmActions:
+      - Ref: "encodingSpotFleetScalingPolicyScaleUp"
+      AlarmDescription: "Alarm if queue depth grows beyond 16 messages"
+      ComparisonOperator: "GreaterThanThreshold"
+      Dimensions:
+      - Name: "QueueName"
+        Value:
+          Fn::GetAtt:
+          - "encodingQueue"
+          - "QueueName"
+      EvaluationPeriods: 2
+      MetricName: "ApproximateNumberOfMessagesVisible"
+      Namespace: "AWS/SQS"
+      Period: 300
+      Statistic: "Sum"
+      Threshold: 16.0
+  encodingSpotFleetWaitCondition:
+    Type: "AWS::CloudFormation::WaitCondition"
+    DependsOn: "encodingSpotFleetWaitConditionHandle"
+    Properties:
+      Count:
+        Ref: "encodingSpotFleetTargetCapacity"
+      Handle:
+        Ref: "encodingSpotFleetWaitConditionHandle"
+      Timeout: "900"
+  encodingSpotFleetWaitConditionHandle:
+    Type: "AWS::CloudFormation::WaitConditionHandle"
+  edgeCacheSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    DependsOn: "vpc"
+    Properties:
+      GroupDescription: "Edge cache Spot fleet instance security group"
+      SecurityGroupIngress:
+      - CidrIp:
+          Ref: "sourceCidr"
+        FromPort: 22
+        IpProtocol: "tcp"
+        ToPort: 22
+      VpcId:
+        Ref: "vpc"
+  edgeCacheSpotFleet:
+    Type: "AWS::EC2::SpotFleet"
+    DependsOn:
+    - "spotFleetRole"
+    - "spotFleetInstanceProfile"
+    - "edgeCacheSecurityGroup"
+    - "icmpSecurityGroup"
+    - "primaryOriginSpotFleet"
+    - "backupOriginSpotFleet"
+    - "applicationLoadBalancerTargetGroup"
+    - "encodingEgressBucket"
+    Properties:
+      SpotFleetRequestConfigData:
+        AllocationStrategy: "diversified"
+        IamFleetRole:
+          Fn::GetAtt:
+          - "spotFleetRole"
+          - "Arn"
+        LaunchSpecifications:
+        - IamInstanceProfile:
+            Arn:
+              Fn::GetAtt:
+              - "spotFleetInstanceProfile"
+              - "Arn"
+          ImageId:
+            Fn::FindInMap:
+            - "amazonLinuxAmi"
+            - Ref: "AWS::Region"
+            - "AMI"
+          InstanceType: "c4.large"
+          KeyName:
+            Ref: "keyName"
+          Monitoring:
+            Enabled: true
+          SecurityGroups:
+          - GroupId:
+              Ref: "edgeCacheSecurityGroup"
+          - GroupId:
+              Ref: "icmpSecurityGroup"
+          SubnetId:
+            Fn::Join:
+            - ","
+            - - Ref: "publicSubnet1"
+              - Ref: "publicSubnet2"
+          UserData: "[Add code here]"
+        SpotPrice: "1.705"
+        TargetCapacity:
+          Ref: "edgeCacheSpotFleetTargetCapacity"
+        TerminateInstancesWithExpiration: true
+  encodingSpotFleetScalableTarget:
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    DependsOn:
+    - "encodingSpotFleet"
+    - "spotFleetAutoscaleRole"
+    Properties:
+      MaxCapacity:
+        Ref: "encodingSpotFleetMaximumCapacity"
+      MinCapacity:
+        Ref: "encodingSpotFleetTargetCapacity"
+      ResourceId:
+        Fn::Join:
+        - "/"
+        - - "spot-fleet-request"
+          - Ref: "encodingSpotFleet"
+      RoleARN:
+        Fn::GetAtt:
+        - "spotFleetAutoscaleRole"
+        - "Arn"
+      ScalableDimension: "ec2:spot-fleet-request:TargetCapacity"
+      ServiceNamespace: "ec2"
+  originSecurityGroupIngress:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    DependsOn:
+    - "originSecurityGroup"
+    - "edgeCacheSecurityGroup"
+    Properties:
+      FromPort: 80
+      GroupId:
+        Fn::GetAtt:
+        - "originSecurityGroup"
+        - "GroupId"
+      IpProtocol: "tcp"
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+        - "edgeCacheSecurityGroup"
+        - "GroupId"
+      ToPort: 80
+  publicSubnet1:
+    Type: "AWS::EC2::Subnet"
+    DependsOn: "attachGateway"
+    Properties:
+      VpcId:
+        Ref: "vpc"
+      MapPublicIpOnLaunch: true
+      AvailabilityZone:
+        Fn::Select:
+        - "0"
+        - Fn::GetAZs:
+            Ref: "AWS::Region"
+      CidrBlock:
+        Fn::FindInMap:
+        - "CidrMappings"
+        - "BroadMistyGlitter"
+        - "MuddyJollyPoetry"
+      Tags:
+      - Key: "Name"
+        Value: "Public Subnet 1"
+  edgeCacheSpotFleetWaitConditionHandle:
+    Type: "AWS::CloudFormation::WaitConditionHandle"
+  encodingSpotFleet:
+    Type: "AWS::EC2::SpotFleet"
+    DependsOn:
+    - "spotFleetRole"
+    - "spotFleetInstanceProfile"
+    - "encodingSecurityGroup"
+    - "icmpSecurityGroup"
+    Properties:
+      SpotFleetRequestConfigData:
+        AllocationStrategy: "diversified"
+        IamFleetRole:
+          Fn::GetAtt:
+          - "spotFleetRole"
+          - "Arn"
+        LaunchSpecifications:
+        - IamInstanceProfile:
+            Arn:
+              Fn::GetAtt:
+              - "spotFleetInstanceProfile"
+              - "Arn"
+          ImageId:
+            Fn::FindInMap:
+            - "amazonLinuxAmi"
+            - Ref: "AWS::Region"
+            - "AMI"
+          InstanceType: "c4.large"
+          KeyName:
+            Ref: "keyName"
+          Monitoring:
+            Enabled: true
+          SecurityGroups:
+          - GroupId:
+              Ref: "encodingSecurityGroup"
+          - GroupId:
+              Ref: "icmpSecurityGroup"
+          SubnetId:
+            Fn::Join:
+            - ","
+            - - Ref: "publicSubnet1"
+              - Ref: "publicSubnet2"
+          UserData: "[Add code here]"
+        SpotPrice: "1.705"
+        TargetCapacity:
+          Ref: "encodingSpotFleetTargetCapacity"
+        TerminateInstancesWithExpiration: true
+Outputs:
+  clientWebsiteURL:
+    Description: "URL for the website hosted on S3"
+    Value:
+      Fn::Join:
+      - ""
+      - - Fn::GetAtt:
+          - "encodingEgressBucket"
+          - "WebsiteURL"
+        - "/path/to/file"
+  cloudFrontDistributionId:
+    Description: "The CloudFront Distribution ID"
+    Value:
+      Ref: "cloudFrontDistribution"
+  cloudFrontDistributionUrl:
+    Description: "The URL of the CloudFront Distribution"
+    Value:
+      Fn::Join:
+      - ""
+      - - "https://www.example.com"
+        - Fn::GetAtt:
+          - "cloudFrontDistribution"
+          - "DomainName"
+  primaryOriginSpotFleetId:
+    Description: "The primary origin Spot fleet request ID"
+    Value:
+      Ref: "primaryOriginSpotFleet"
+  primaryOriginElasticIp:
+    Description: "The primary origin Elastic IP"
+    Value:
+      Ref: "primaryOriginElasticIp"
+  encodingQueueArn:
+    Description: "The encoding SQS queue ARN"
+    Value:
+      Fn::GetAtt:
+      - "encodingQueue"
+      - "Arn"
+  backupOriginSpotFleetId:
+    Description: "The backup origin Spot fleet request ID"
+    Value:
+      Ref: "backupOriginSpotFleet"
+  cloudWatchLogsGroupId:
+    Description: "The CloudWatch Logs group ID"
+    Value:
+      Ref: "cloudWatchLogsGroup"
+  edgeCacheSpotFleetId:
+    Description: "The edge cache Spot fleet request ID"
+    Value:
+      Ref: "edgeCacheSpotFleet"
+  encodingIngressBucketId:
+    Description: "The encoding ingress S3 bucket ID"
+    Value:
+      Ref: "encodingIngressBucket"
+  testStreamSpotFleet:
+    Description: "The test stream Spot fleet request ID"
+    Value:
+      Ref: "testStreamSpotFleet"
+  awsRegionId:
+    Description: "The AWS Region ID your template was launched in"
+    Value:
+      Ref: "AWS::Region"
+  backupOriginElasticIp:
+    Description: "The backup origin Elastic IP"
+    Value:
+      Ref: "backupOriginElasticIp"
+  applicationLoadBalancerId:
+    Description: "The Application Load Balancer ID"
+    Value:
+      Ref: "applicationLoadBalancer"
+  encodingEgressBucketId:
+    Description: "The encoding egress S3 bucket ID"
+    Value:
+      Ref: "encodingEgressBucket"
+  encodingSpotFleetId:
+    Description: "The encoding Spot fleet request ID"
+    Value:
+      Ref: "encodingSpotFleet"
+  clientTestPatternURL:
+    Description: "URL for the test pattern"
+    Value:
+      Fn::Join:
+      - ""
+      - - Fn::GetAtt:
+          - "encodingEgressBucket"
+          - "WebsiteURL"
+        - "/path/to/file"
+        - Fn::GetAtt:
+          - "cloudFrontDistribution"
+          - "DomainName"
+        - "/path/to/file"
+  backupOriginElasticNetworkInterfacePrivateIpAddress:
+    Description: "The primary private IP address of the backup origin Elastic Network\
+      \ Interface"
+    Value:
+      Fn::GetAtt:
+      - "backupOriginElasticNetworkInterface"
+      - "PrimaryPrivateIpAddress"
+  primaryOriginElasticNetworkInterfacePrivateIpAddress:
+    Description: "The primary private IP address of the primary origin Elastic Network\
+      \ Interface"
+    Value:
+      Fn::GetAtt:
+      - "primaryOriginElasticNetworkInterface"
+      - "PrimaryPrivateIpAddress"
+  testStreamEcsCluster:
+    Description: "The name of the ECS cluster"
+    Value:
+      Ref: "testStreamEcsCluster"
+AWSTemplateFormatVersion: "2010-09-09"

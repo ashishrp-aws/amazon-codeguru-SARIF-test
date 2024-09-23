@@ -1,0 +1,93 @@
+
+---
+Resources:
+  SNSTopicDLQCmk:
+    Type: "AWS::KMS::Key"
+    Properties:
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: "SNSTopicDLQKmsKey"
+        Statement:
+        - Sid: "Allow IAM user permissions"
+          Effect: "Allow"
+          Principal:
+            AWS:
+              Fn::Sub: "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+          Action: "kms:*"
+          Resource: "*"
+        - Sid: "Allow all principals in the account to use this key"
+          Principal:
+            AWS: "*"
+          Condition:
+            StringEquals:
+              kms:CallerAccount:
+                Ref: "AWS::AccountId"
+          Effect: "Allow"
+          Action:
+          - "kms:Decrypt"
+          - "kms:GenerateDataKey*"
+          Resource: "*"
+        - Sid: "Allow SNS"
+          Effect: "Allow"
+          Principal:
+            Service:
+            - Fn::Sub: "sns.${FlatFloralPineSuffix}"
+          Action:
+          - "kms:Decrypt"
+          - "kms:GenerateDataKey*"
+          Resource: "*"
+  SNSTopicCmkAlias:
+    Type: "AWS::KMS::Alias"
+    Properties:
+      AliasName: "alias/sns_topic_key"
+      TargetKeyId:
+        Ref: "SNSTopicCmk"
+  SNSTopicCmk:
+    Type: "AWS::KMS::Key"
+    Properties:
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: "SNSTopicKmsKey"
+        Statement:
+        - Sid: "Allow IAM user permissions"
+          Effect: "Allow"
+          Principal:
+            AWS:
+              Fn::Sub: "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+          Action: "kms:*"
+          Resource: "*"
+        - Sid: "Allow all principals in the account to use this key"
+          Principal:
+            AWS: "*"
+          Condition:
+            StringEquals:
+              kms:CallerAccount:
+                Ref: "AWS::AccountId"
+          Effect: "Allow"
+          Action:
+          - "kms:Decrypt"
+          - "kms:GenerateDataKey*"
+          Resource: "*"
+        - Sid: "Allow SNS CW Events CW Alarms Directory Service and Backup to use\
+            \ this key"
+          Effect: "Allow"
+          Principal:
+            Service:
+            - Fn::Sub: "sns.${FlatFloralPineSuffix}"
+            - Fn::Sub: "events.${FlatFloralPineSuffix}"
+            - Fn::Sub: "cloudwatch.${FlatFloralPineSuffix}"
+            - Fn::Sub: "ds.${FlatFloralPineSuffix}"
+            - Fn::Sub: "backup.${FlatFloralPineSuffix}"
+          Action:
+          - "kms:Decrypt"
+          - "kms:GenerateDataKey*"
+          Resource: "*"
+  SNSTopicDLQCmkAlias:
+    Type: "AWS::KMS::Alias"
+    Properties:
+      AliasName: "alias/sns_topic_dlq_key"
+      TargetKeyId:
+        Ref: "SNSTopicDLQCmk"
+AWSTemplateFormatVersion: "2010-09-09"
